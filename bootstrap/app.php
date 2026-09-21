@@ -11,6 +11,13 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->trustProxies(
+            at: config('deployment.trusted_proxies', []),
+            headers: \Illuminate\Http\Request::HEADER_X_FORWARDED_FOR
+                | \Illuminate\Http\Request::HEADER_X_FORWARDED_PROTO
+                | \Illuminate\Http\Request::HEADER_X_FORWARDED_PORT,
+        );
+
         // 👉 Đăng ký middleware alias tại đây
         $middleware->alias([
             'admin' => \App\Http\Middleware\AdminMiddleware::class,

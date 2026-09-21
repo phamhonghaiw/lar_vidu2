@@ -20,10 +20,10 @@ use App\Http\Controllers\Admin\UserController as AdminUserController;
 use App\Http\Controllers\Admin\OrderController as AdminOrderController;
 use App\Http\Controllers\Admin\ChatController as AdminChatController;
 use App\Http\Controllers\Admin\ReportController;
+use App\Http\Controllers\Admin\FinanceController;
 
 use Illuminate\Foundation\Auth\EmailVerificationRequest;
 use Illuminate\Http\Request;
-
 
 /*
 |--------------------------------------------------------------------------
@@ -70,6 +70,10 @@ Route::middleware(['auth', 'admin'])->prefix('admin')->name('admin.')->group(fun
 
     // Dashboard
     Route::get('/dashboard', [AdminController::class, 'dashboard'])->name('dashboard');
+
+    Route::get('/finance', [FinanceController::class, 'index'])->name('finance.index');
+    Route::get('/finance/transactions', [FinanceController::class, 'transactions'])->name('finance.transactions');
+    Route::patch('/finance/{order}/status', [FinanceController::class, 'updateStatus'])->name('finance.update-status');
 
     // Reports
     Route::get('/reports', [ReportController::class, 'index'])->name('reports.index');

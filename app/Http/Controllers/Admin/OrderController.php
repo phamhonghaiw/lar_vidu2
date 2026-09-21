@@ -5,30 +5,112 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Order;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class OrderController extends Controller
 {
+    private const TABS = [
+        'all' => ['label' => 'Tất cả', 'color' => 'blue', 'statuses' => []],
+        'pending' => ['label' => 'Chờ xử lý', 'color' => 'slate', 'statuses' => ['pending', 'not_shipped', 'processing']],
+        'ready' => ['label' => 'Chờ lấy hàng', 'color' => 'cyan', 'statuses' => ['ready_to_pick']],
+        'picking' => ['label' => 'Đang lấy hàng', 'color' => 'cyan', 'statuses' => ['picking']],
+        'delivering' => ['label' => 'Đang giao', 'color' => 'amber', 'statuses' => ['delivering', 'picked', 'storing', 'transporting', 'sorting']],
+        'delivered' => ['label' => 'Thành công', 'color' => 'green', 'statuses' => ['delivered']],
+        'return' => ['label' => 'Hoàn hàng', 'color' => 'orange', 'statuses' => ['return', 'returning', 'returned', 'return_transporting', 'return_sorting']],
+        'cancelled' => ['label' => 'Đã hủy', 'color' => 'red', 'statuses' => ['cancelled']],
+    ];
+
     // Hiển thị danh sách đơn hàng
     public function index(Request $request)
     {
-        $paymentStatuses = ['pending', 'paid', 'cod_ordered', 'cod_paid', 'cancelled'];
-        $shippingStatuses = ['pending', 'processing', 'ready_to_pick', 'picking', 'delivering', 'delivered', 'return', 'cancelled'];
+        $paymentLabels = [
+            'pending' => 'Chờ thanh toán', 'initiated' => 'Đang chờ MoMo', 'paid' => 'Đã thanh toán',
+            'failed' => 'Thanh toán thất bại', 'cancelled' => 'Đã hủy',
+            'refund_pending' => 'Chờ hoàn tiền', 'refunded' => 'Đã hoàn tiền',
+        ];
+        $shippingLabels = [
+            'pending' => 'Chờ tạo vận đơn', 'not_shipped' => 'Chưa giao hàng', 'processing' => 'Đang tạo vận đơn',
+            'ready_to_pick' => 'Chờ lấy hàng', 'picking' => 'Đang lấy hàng', 'picked' => 'Đã lấy hàng',
+            'storing' => 'Đang lưu kho', 'transporting' => 'Đang trung chuyển', 'sorting' => 'Đang phân loại',
+            'delivering' => 'Đang giao hàng', 'delivered' => 'Giao hàng thành công',
+            'return' => 'Chờ hoàn hàng', 'returning' => 'Đang hoàn hàng', 'returned' => 'Đã hoàn hàng',
+            'return_transporting' => 'Đang chuyển hoàn', 'return_sorting' => 'Đang phân loại hoàn', 'cancelled' => 'Đã hủy',
+        ];
 
-        $validated = $request->validate([
-            'status' => 'nullable|in:' . implode(',', $paymentStatuses),
-            'shipping_status' => 'nullable|in:' . implode(',', $shippingStatuses),
+        $filters = $request->validate([
+            'search' => ['nullable', 'string', 'max:100'],
+            'status' => ['nullable', Rule::in(['pending', 'paid', 'paid_momo', 'cod_ordered', 'cod_paid', 'cancelled'])],
+            'payment_status' => ['nullable', Rule::in(array_keys($paymentLabels))],
+            'shipping_status' => ['nullable', Rule::in(array_keys($shippingLabels))],
+            'gateway' => ['nullable', Rule::in(['cod', 'momo', 'unknown'])],
+            'tab' => ['nullable', Rule::in(array_keys(self::TABS))],
+            'date_from' => ['nullable', 'date_format:Y-m-d'],
+            'date_to' => ['nullable', 'date_format:Y-m-d', ...($request->filled('date_from') ? ['after_or_equal:date_from'] : [])],
+            'per_page' => ['nullable', 'integer', Rule::in([25, 50, 100])],
+            'sort' => ['nullable', Rule::in(['newest', 'oldest', 'amount_desc', 'amount_asc'])],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ], [
+            'date_to.after_or_equal' => 'Ngày kết thúc phải từ ngày bắt đầu trở đi.',
+            '*.date_format' => 'Ngày lọc không hợp lệ.', '*.in' => 'Giá trị bộ lọc không hợp lệ.',
         ]);
 
-        $orders = Order::with(['paymentTransactions' => function ($query) {
-                $query->latest();
-            }])
-            ->when($validated['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
-            ->when($validated['shipping_status'] ?? null, fn ($query, $status) => $query->where('shipping_status', $status))
-            ->latest()
-            ->paginate(15)
-            ->withQueryString();
+        $paymentId = DB::table('payment_transactions')->select('id')->whereColumn('order_id', 'orders.id')
+            ->orderByRaw("CASE WHEN status IN ('paid', 'refund_pending', 'refunded') THEN 0 ELSE 1 END")
+            ->orderByDesc('id')->limit(1);
+        $source = DB::table('orders')->leftJoin('payment_transactions as payment', function ($join) use ($paymentId) {
+            $join->on('payment.order_id', '=', 'orders.id')->where('payment.id', '=', $paymentId);
+        })->select('orders.*')
+            ->selectRaw("COALESCE(payment.gateway, CASE WHEN orders.status IN ('cod_ordered', 'cod_paid') THEN 'cod' WHEN orders.status IN ('paid', 'paid_momo') THEN 'momo' ELSE 'unknown' END) as gateway")
+            ->selectRaw("COALESCE(payment.status, CASE WHEN orders.status = 'cod_ordered' THEN 'pending' WHEN orders.status IN ('cod_paid', 'paid_momo') THEN 'paid' ELSE orders.status END) as payment_status");
+        $query = Order::query()->fromSub($source, 'orders');
+        foreach (['status', 'payment_status', 'gateway'] as $field) {
+            if ($request->filled($field)) {
+                $query->where($field, $filters[$field]);
+            }
+        }
+        if ($request->filled('search')) {
+            $search = trim($filters['search']);
+            $query->where(function ($query) use ($search) {
+                $query->where('name', 'like', '%'.$search.'%')->orWhere('phone', 'like', '%'.$search.'%')
+                    ->orWhere('ghn_order_code', 'like', '%'.$search.'%')
+                    ->orWhereHas('items.product', fn ($products) => $products->where('name', 'like', '%'.$search.'%'));
+                if (preg_match('/^(?:#|DH)?0*(\d+)$/i', $search, $matches)) {
+                    $query->orWhere('orders.id', $matches[1]);
+                }
+            });
+        }
+        if ($request->filled('date_from')) {
+            $query->where('created_at', '>=', Carbon::parse($filters['date_from'])->startOfDay());
+        }
+        if ($request->filled('date_to')) {
+            $query->where('created_at', '<', Carbon::parse($filters['date_to'])->addDay()->startOfDay());
+        }
 
-        return view('admin.order.index', compact('orders'));
+        // Số trên tab theo bộ lọc chung, không bị giới hạn bởi trang hiện tại.
+        $shippingCounts = (clone $query)->select('shipping_status')->selectRaw('COUNT(*) as total')
+            ->groupBy('shipping_status')->pluck('total', 'shipping_status');
+        $tabs = collect(self::TABS)->map(function ($tab, $key) use ($shippingCounts) {
+            $tab['count'] = $key === 'all' ? $shippingCounts->sum()
+                : collect($tab['statuses'])->sum(fn ($status) => $shippingCounts->get($status, 0));
+            return $tab;
+        });
+        $activeTab = $filters['tab'] ?? 'all';
+        if ($activeTab !== 'all') {
+            $query->whereIn('shipping_status', self::TABS[$activeTab]['statuses']);
+        }
+        if ($request->filled('shipping_status')) {
+            $query->where('shipping_status', $filters['shipping_status']);
+        }
+        [$column, $direction] = match ($filters['sort'] ?? 'newest') {
+            'oldest' => ['created_at', 'asc'], 'amount_desc' => ['total_price', 'desc'],
+            'amount_asc' => ['total_price', 'asc'], default => ['created_at', 'desc'],
+        };
+        $orders = $query->with('items.product')->orderBy($column, $direction)->orderBy('id', $direction)
+            ->paginate((int) ($filters['per_page'] ?? 25))->withQueryString();
+
+        return view('admin.order.index', compact('orders', 'filters', 'tabs', 'activeTab', 'paymentLabels', 'shippingLabels'));
     }
 
     // Hiển thị chi tiết đơn hàng
