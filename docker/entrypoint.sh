@@ -47,6 +47,11 @@ case "${RUN_MIGRATIONS:-true}" in
     false) ;;
     *) echo "RUN_MIGRATIONS must be true or false" >&2; exit 1 ;;
 esac
+case "${RUN_SEEDERS:-false}" in
+    true) su-exec www-data php artisan db:seed --force --no-interaction ;;
+    false) ;;
+    *) echo "RUN_SEEDERS must be true or false" >&2; exit 1 ;;
+esac
 su-exec www-data php artisan route:cache
 su-exec www-data php artisan view:cache
 

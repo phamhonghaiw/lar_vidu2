@@ -2,50 +2,46 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
 use App\Models\User;
+use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
-use Carbon\Carbon;
-use Illuminate\Support\Str;
+use RuntimeException;
 
 class AdminUserSeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
     public function run(): void
     {
-        // Admin 1
-        User::create([
-            'name' => 'Admin User',
-            'email' => 'admin@example.com',
-            'password' => Hash::make('123123'),
-            'role' => 'admin',
-            'remember_token' => Str::random(10),
-            'created_at' => Carbon::now(),
-            'updated_at' => Carbon::now(),
-        ]);
+        $email = trim((string) config('seeding.admin.email'));
 
-        // Admin 2
-        User::create([
-            'name' => 'Admin User 2',
-            'email' => 'admin2@example.com',
-            'password' => Hash::make('123123'),
-            'role' => 'admin',
-            'remember_token' => Str::random(10),
-            'created_at' => Carbon::now(),
-            'updated_at' => Carbon::now(),
-        ]);
+        if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            throw new RuntimeException('Set a valid SEED_ADMIN_EMAIL before running seeders.');
+        }
 
-        // Người dùng thường
-        User::create([
-            'name' => 'Người dùng 1',
-            'email' => 'nguoidung1@gmail.com',
-            'password' => Hash::make('123123'),
-            'role' => 'user',
-            'remember_token' => Str::random(10),
-            'created_at' => Carbon::now(),
-            'updated_at' => Carbon::now(),
-        ]);
+        $existing = User::where('email', $email)->first();
+        if ($existing) {
+            if ($existing->role !== 'admin') {
+                throw new RuntimeException('SEED_ADMIN_EMAIL belongs to a non-admin account. Choose a different email.');
+            }
+
+            $this->command?->info('Admin already exists; existing account and password kept.');
+            return;
+        }
+
+        $password = (string) config('seeding.admin.password');
+        if (strlen($password) < 12) {
+            throw new RuntimeException('Set SEED_ADMIN_PASSWORD to at least 12 characters before creating the admin.');
+        }
+
+        $admin = new User();
+        $admin->forceFill([
+            'name' => config('seeding.admin.name') ?: 'Shop Admin',
+            'email' => $email,
+            'password' => Hash::make($password),
+            'role' => 'admin',
+            // This account is provisioned by the operator, without sending email.
+            'email_verified_at' => now(),
+        ])->save();
+
+        $this->command?->info('Admin created and verified. Sign in with the configured seed credentials.');
     }
 }

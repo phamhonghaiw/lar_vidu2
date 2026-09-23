@@ -42,6 +42,18 @@ Lệnh này chỉ in key, không ghi đè `.env`. Giữ nguyên key qua các l�
 
 ## 3. Email, MoMo và GHN
 
+### Tạo admin và dữ liệu mẫu
+
+Trên Render > Environment, đặt `RUN_SEEDERS=true`, `SEED_ADMIN_NAME=Shop Admin`, `SEED_ADMIN_EMAIL` là email admin bạn chọn và `SEED_ADMIN_PASSWORD` là mật khẩu riêng ít nhất 12 ký tự. Sau khi push code mới, deploy lại. Script sẽ chạy migration trước, rồi tạo **1 admin đã xác thực, 3 danh mục và 10 sản phẩm mẫu**. Seeder không dùng Faker nên chạy được với `composer install --no-dev`. Log sẽ có `Admin created and verified` khi tạo mới, hoặc `Admin already exists` nếu đã có.
+
+Đăng nhập tại `/login` bằng email/mật khẩu đã đặt; tài khoản được chuyển vào `/admin/dashboard` và không cần nhận email xác thực. Seeder không bật xác thực sẵn cho tài khoản đăng ký thông thường. Không có mật khẩu admin cố định trong source.
+
+Sau lần đầu thành công, đổi `RUN_SEEDERS=false` và có thể xóa `SEED_ADMIN_PASSWORD` khỏi Render. Nếu chạy lại, seeder giữ mật khẩu admin, giá và tồn kho đã sửa; chỉ thêm bản ghi còn thiếu theo email hoặc tên sản phẩm/danh mục. Đổi `SEED_ADMIN_PASSWORD` không reset mật khẩu admin đã tồn tại. Nếu email đã thuộc tài khoản thường, seeder sẽ dừng và yêu cầu chọn email khác, không tự nâng quyền tài khoản đó.
+
+Để seed trên máy, đặt các biến `SEED_ADMIN_*` trong `.env`, chạy `php artisan config:clear` rồi `php artisan db:seed`. Kiểm tra kết nối database trước khi chạy vì lệnh sẽ thêm dữ liệu vào database đang cấu hình. Không chạy `migrate:fresh` để thêm dữ liệu mẫu vào database có dữ liệu cần giữ.
+
+### Gửi email và tích hợp bên ngoài
+
 Ứng dụng gửi email xác thực khi đăng ký. `MAIL_MAILER=log` trong file mẫu chỉ phục vụ demo, **không gửi email đến người dùng**. Render Free chặn SMTP cổng 25/465/587, nên cấu hình Gmail hiện tại không dùng được. Trước khi mở đăng ký thực tế, cần chọn dịch vụ gửi qua HTTPS, cài dependency Laravel tương ứng, rồi cấu hình API key và địa chỉ gửi đã xác minh. Không dùng `log` để coi chức năng email đã hoàn thành.
 
 Giữ `GHN_VERIFY_SSL=true` và `MOMO_VERIFY_SSL=true`. File mẫu dùng môi trường thử nghiệm; không trộn token thử nghiệm với endpoint thật. Đăng ký/cập nhật các URL trên dịch vụ tương ứng:
@@ -63,7 +75,7 @@ Tự tạo `.env.docker` từ mẫu, điền cấu hình database thử nghiệm
 
 Kiểm tra `/up`, trang chủ, đăng nhập, giỏ hàng và admin. Khởi động lại container rồi kiểm tra session/giỏ hàng còn được giữ. Kiểm tra logs không có lỗi DB, permission hoặc cache. Thử email xác thực và giao dịch sandbox sau khi đã cấu hình dịch vụ.
 
-File tạo trong container không bền vững trên Render Free. Dữ liệu nghiệp vụ/session/cache được giữ ở Aiven; nếu thêm upload ảnh/tệp, cần storage bên ngoài. Database mới chưa có tài khoản admin: import dữ liệu phù hợp hoặc cấp quyền admin cho tài khoản của bạn bằng quy trình quản trị riêng; image không tạo tài khoản/mật khẩu mặc định.
+File tạo trong container không bền vững trên Render Free. Dữ liệu nghiệp vụ/session/cache được giữ ở Aiven; nếu thêm upload ảnh/tệp, cần storage bên ngoài. Dùng tùy chọn seed ở trên để tạo admin trên database mới; image không tạo tài khoản/mật khẩu mặc định khi chưa bật seed và cung cấp thông tin admin.
 
 ## Tài liệu đối chiếu
 
