@@ -15,6 +15,8 @@ Tạo dịch vụ MySQL Free, lấy host, port, database, username, password t�
 
 Tải chứng chỉ CA của dịch vụ. Trên Render thêm **Secret File** tên `ca.pem`, rồi đặt `MYSQL_ATTR_SSL_CA=/etc/secrets/ca.pem`. Chứng chỉ phải đọc được bởi tiến trình PHP-FPM. Cấu hình MySQL giữ xác minh chứng chỉ bật; không tắt xác minh để né lỗi kết nối.
 
+Entry point sao chép CA lúc container khởi động sang `/run/app-certificates/mysql-ca.pem`, cấp quyền đọc cho `www-data`, rồi kiểm tra định dạng PEM bằng chính user này trước khi cache/migrate. Cách này xử lý trường hợp Secret File chỉ đọc được bởi root. Trên Render vẫn giữ `MYSQL_ATTR_SSL_CA=/etc/secrets/ca.pem`; đường dẫn nội bộ được script tự điều chỉnh, chứng chỉ không được ghi vào image khi build. Kiểm tra PEM không chứng minh CA thuộc đúng dịch vụ: bước kết nối MySQL vẫn xác minh chứng chỉ máy chủ.
+
 Database mới sẽ được tạo bảng bằng migration lúc khởi động. Migration không tự chuyển tài khoản, sản phẩm, đơn hàng từ máy lên Aiven. Nếu cần dữ liệu hiện có, xuất/import SQL trước lần chạy đầu, bao gồm bảng `migrations`, và kiểm tra schema tương thích. Không chạy `migrate:fresh` với dữ liệu cần giữ.
 
 ## 2. Tạo Web Service trên Render

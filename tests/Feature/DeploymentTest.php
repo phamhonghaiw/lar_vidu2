@@ -31,8 +31,8 @@ class DeploymentTest extends TestCase
 
     public function test_trusted_proxy_generates_https_form_urls(): void
     {
-        // The HTTP kernel applies config/deployment.php when it resolves middleware.
-        config(['deployment.trusted_proxies' => '*']);
+        // Laravel reads this configuration when the proxy middleware handles a request.
+        config(['trustedproxy.proxies' => '*']);
 
         $this->withServerVariables(['REMOTE_ADDR' => '10.0.0.10'])
             ->withHeaders(['X-Forwarded-Proto' => 'https', 'X-Forwarded-Port' => '443'])
@@ -43,7 +43,7 @@ class DeploymentTest extends TestCase
 
     public function test_untrusted_proxy_cannot_change_form_url_scheme(): void
     {
-        config(['deployment.trusted_proxies' => []]);
+        config(['trustedproxy.proxies' => []]);
 
         $this->withServerVariables(['REMOTE_ADDR' => '10.0.0.10'])
             ->withHeaders(['X-Forwarded-Proto' => 'https', 'X-Forwarded-Port' => '443'])

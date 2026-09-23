@@ -3,6 +3,26 @@ set -Eeuo pipefail
 
 cd /var/www
 
+# Render secret mounts may be readable by root but not by www-data.
+# Copy only the CA certificate at runtime to an app-readable private location.
+if [[ -n "${MYSQL_ATTR_SSL_CA:-}" ]]; then
+    if [[ ! -f "$MYSQL_ATTR_SSL_CA" || ! -r "$MYSQL_ATTR_SSL_CA" ]]; then
+        echo "Cannot read MySQL CA file. Check Render Secret Files and MYSQL_ATTR_SSL_CA." >&2
+        exit 1
+    fi
+    (
+        umask 077
+        mkdir -p /run/app-certificates
+        chown root:www-data /run/app-certificates
+        chmod 750 /run/app-certificates
+        cp "$MYSQL_ATTR_SSL_CA" /run/app-certificates/mysql-ca.pem
+        chown www-data:www-data /run/app-certificates/mysql-ca.pem
+        chmod 400 /run/app-certificates/mysql-ca.pem
+    )
+    export MYSQL_ATTR_SSL_CA=/run/app-certificates/mysql-ca.pem
+    su-exec www-data php docker/check-ca.php
+fi
+
 # Allow maintenance commands with: docker run ... IMAGE php artisan ...
 if (( $# > 0 )); then
     exec su-exec www-data "$@"
@@ -15,11 +35,6 @@ if [[ ! "$PORT" =~ ^[0-9]{1,5}$ ]] || (( 10#$PORT < 1 || 10#$PORT > 65535 )); th
     echo "PORT must be an integer between 1 and 65535" >&2
     exit 1
 fi
-if [[ -n "${MYSQL_ATTR_SSL_CA:-}" && ! -r "$MYSQL_ATTR_SSL_CA" ]]; then
-    echo "MYSQL_ATTR_SSL_CA must point to a readable CA certificate" >&2
-    exit 1
-fi
-
 # Substitute PORT only; preserve Nginx variables such as $uri and $query_string.
 envsubst '${PORT}' < /etc/nginx/templates/default.conf.template > /etc/nginx/http.d/default.conf
 
